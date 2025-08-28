@@ -1,0 +1,49 @@
+﻿@model IEnumerable<RetailappPOE.Models.Orders>
+@using RetailappPOE.Models
+@{
+    ViewData["Title"] = "Orders";
+
+    var customers = ViewData["Customers"] as IEnumerable<Customers>;
+    var products = ViewData["Products"] as IEnumerable<Product>;
+}
+
+<h2>Orders</h2>
+
+<p>
+    <a asp-action="Create" class="btn btn-primary">Create New Order</a>
+</p>
+
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Customer</th>
+            <th>Product</th>
+            <th>Quantity</th>
+            <th>Order Date</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var item in Model)
+        {
+            var customerName = customers?.FirstOrDefault(c => c.RowKey == item.CustomerId)?.Name ?? "Unknown";
+            var productName = products?.FirstOrDefault(p => p.RowKey == item.ProductId)?.Name ?? "Unknown";
+
+            <tr>
+                <td>@customerName</td>
+                <td>@productName</td>
+                <td>@item.Quantity</td>
+                <td>@item.OrderDate.ToString("yyyy-MM-dd")</td>
+                <td>
+                    <!-- ✅ Goes to GET: Orders/Delete -->
+                    <a asp-action="Delete"
+                       asp-route-partitionKey="@item.PartitionKey"
+                       asp-route-rowKey="@item.RowKey"
+                       class="btn btn-sm btn-danger">
+                        Delete
+                    </a>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>

@@ -1,0 +1,90 @@
+﻿@{
+    ViewData["Title"] = "Home Page";
+}
+
+<style>
+    .card {
+        background-color: #1e1e1e; /* dark card */
+        color: #ffffff; /* white text */
+        border: 1px solid #333;
+        border-radius: 10px;
+        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(255, 215, 0, 0.3); /* gold glow */
+        }
+
+    .btn-black {
+        background-color: #000;
+        color: #fff;
+        border: none;
+        font-weight: bold;
+        border-radius: 6px;
+        padding: 8px 16px;
+    }
+
+        .btn-black:hover {
+            background-color: gold;
+            color: #000;
+        }
+
+    h1.display-4 {
+        font-weight: 700;
+        margin-bottom: 20px;
+    }
+
+    .lead {
+        color: gold;
+        font-size: 1.2rem;
+        margin-bottom: 2rem;
+    }
+</style>
+
+<div class="text-center mb-5">
+    <h1 class="display-4">Welcome to EliteBoots</h1>
+    <p class="lead">Your premium destination for soccer boots</p>
+</div>
+
+<div class="row text-center">
+    <div class="col-md-3">
+        <div class="card mb-4 shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title">Home</h5>
+                <p class="card-text">Return to the main page.</p>
+                <a class="btn btn-black" asp-controller="Home" asp-action="Index">Go Home</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card mb-4 shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title">Customers</h5>
+                <p class="card-text">Manage customer information.</p>
+                <a class="btn btn-black" asp-controller="Customers" asp-action="Index">Go to Customers</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card mb-4 shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title">Products</h5>
+                <p class="card-text">Browse and manage products.</p>
+                <a class="btn btn-black" asp-controller="Product" asp-action="Index">Go to Products</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card mb-4 shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title">Orders</h5>
+                <p class="card-text">View and manage orders.</p>
+                <a class="btn btn-black" asp-controller="Orders" asp-action="Index">Go to Orders</a>
+            </div>
+        </div>
+    </div>
+</div>

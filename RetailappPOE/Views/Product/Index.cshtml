@@ -1,0 +1,55 @@
+﻿@model IEnumerable<RetailappPOE.Models.Product>
+
+@{
+    ViewData["Title"] = "Products";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-light fw-bold">Products</h2>
+    <a asp-action="Create" class="btn btn-lg btn-success fw-bold shadow rounded-pill px-4">
+        + Add Product
+    </a>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-dark table-hover table-bordered align-middle shadow-sm">
+        <thead class="table-light">
+            <tr class="text-center">
+                <th>Name</th>
+                <th>Description</th>
+                <th>Price</th>
+                <th>Image</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in Model)
+            {
+                <tr class="text-center">
+                    <td class="fw-bold">@p.Name</td>
+                    <td>@p.Description</td>
+                    <td>R @p.Price</td>   <!-- ✅ Changed $ to R -->
+                    <td>
+                        @if (!string.IsNullOrEmpty(p.ImageUrl))
+                        {
+                            <img src="@p.ImageUrl" width="140" height="140"
+                                 class="img-thumbnail rounded shadow-sm border border-light" />
+                        }
+                    </td>
+                    <td>
+                        <form asp-action="Delete" method="post" style="display:inline">
+                            <input type="hidden" name="partitionKey" value="@p.PartitionKey" />
+                            <input type="hidden" name="rowKey" value="@p.RowKey" />
+                            <input type="hidden" name="imageUrl" value="@p.ImageUrl" />
+                            <button type="submit"
+                                    class="btn btn-sm btn-danger rounded-pill px-3 shadow"
+                                    onclick="return confirm('Are you sure you want to delete this product?');">
+                                Delete
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
