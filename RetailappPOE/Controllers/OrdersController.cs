@@ -1,89 +1,115 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using RetailappPOE.Models;
-using RetailappPOE.Services;
+using System.Net.Http;
+using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+using System.Collections.Generic;
 
-namespace RetailappPOE.Controllers
+namespace RetailAppPOE.Controllers
 {
     public class OrdersController : Controller
     {
-        private readonly TableStorageService _orderService;
-        private readonly TableStorageService _customerService;
-        private readonly TableStorageService _productService;
-        private readonly QueueService _queueService;
+        private readonly HttpClient _httpClient;
+        private readonly string _baseFunctionUrl = "https://ryanst10440289part2-a3avddhxerhyhke4.southafricanorth-01.azurewebsites.net/api/";
 
-        public OrdersController(IConfiguration configuration, QueueService queueService)
+        public OrdersController(HttpClient httpClient)
         {
-            var connectionString = configuration.GetConnectionString("AzureStorage")
-                ?? throw new InvalidOperationException("AzureStorage connection string not found.");
-
-            _orderService = new TableStorageService(connectionString, "Orders");
-            _customerService = new TableStorageService(connectionString, "Customers");
-            _productService = new TableStorageService(connectionString, "Products");
-            _queueService = queueService;
+            _httpClient = httpClient;
         }
 
-        // GET: Orders
+        // ==================== VIEW ALL ORDERS ====================
         public async Task<IActionResult> Index()
         {
-            var orders = await _orderService.GetOrdersAsync();
-            var customers = await _customerService.GetCustomersAsync();
-            var products = await _productService.GetProductsAsync();
+            var response = await _httpClient.GetAsync(_baseFunctionUrl + "orders");
 
-            ViewData["Customers"] = customers;
-            ViewData["Products"] = products;
+            if (!response.IsSuccessStatusCode)
+            {
+                ViewBag.Error = "Failed to load orders from Azure Function.";
+                return View(new List<Orders>());
+            }
+
+            var content = await response.Content.ReadAsStringAsync();
+            var orders = JsonSerializer.Deserialize<List<Orders>>(content, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            // Fetch customers and products for dropdown/display
+            var customersResp = await _httpClient.GetAsync(_baseFunctionUrl + "customers");
+            var productsResp = await _httpClient.GetAsync(_baseFunctionUrl + "products");
+
+            ViewData["Customers"] = customersResp.IsSuccessStatusCode
+                ? JsonSerializer.Deserialize<List<Customers>>(await customersResp.Content.ReadAsStringAsync(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                : new List<Customers>();
+
+            ViewData["Products"] = productsResp.IsSuccessStatusCode
+                ? JsonSerializer.Deserialize<List<Product>>(await productsResp.Content.ReadAsStringAsync(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                : new List<Product>();
 
             return View(orders);
         }
 
-        // GET: Orders/Create
+        // ==================== ADD ORDER (GET) ====================
+        [HttpGet]
         public async Task<IActionResult> Create()
         {
-            ViewData["Customers"] = await _customerService.GetCustomersAsync();
-            ViewData["Products"] = await _productService.GetProductsAsync();
-            return View();
+            var customersResp = await _httpClient.GetAsync(_baseFunctionUrl + "customers");
+            var productsResp = await _httpClient.GetAsync(_baseFunctionUrl + "products");
+
+            ViewData["Customers"] = customersResp.IsSuccessStatusCode
+                ? JsonSerializer.Deserialize<List<Customers>>(await customersResp.Content.ReadAsStringAsync(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                : new List<Customers>();
+
+            ViewData["Products"] = productsResp.IsSuccessStatusCode
+                ? JsonSerializer.Deserialize<List<Product>>(await productsResp.Content.ReadAsStringAsync(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                : new List<Product>();
+
+            return View(new Orders());
         }
 
-        // POST: Orders/Create
         [HttpPost]
-        [ValidateAntiForgeryToken]
         public async Task<IActionResult> Create(Orders order)
         {
-            if (ModelState.IsValid)
+            if (!ModelState.IsValid)
             {
-                order.PartitionKey = "ORDER";
-                order.RowKey = Guid.NewGuid().ToString();
-                order.OrderDate = DateTime.UtcNow;
-
-                await _orderService.AddOrderAsync(order);
-
-                // Send order message to queue
-                await _queueService.SendMessageAsync(order);
-
-                return RedirectToAction(nameof(Index));
+                return await Create();
             }
 
-            ViewData["Customers"] = await _customerService.GetCustomersAsync();
-            ViewData["Products"] = await _productService.GetProductsAsync();
-            return View(order);
+            var json = JsonSerializer.Serialize(order);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.PostAsync(_baseFunctionUrl + "orders", content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                TempData["Success"] = "Order added successfully.";
+                return RedirectToAction("Index");
+            }
+
+            ModelState.AddModelError("", "Failed to add order via Azure Function.");
+            return await Create();
         }
 
-        // GET: Orders/Delete/5
+
+        // ==================== DELETE ORDER ====================
+        [HttpPost]
         public async Task<IActionResult> Delete(string partitionKey, string rowKey)
         {
-            var order = await _orderService.GetOrderByIdAsync(partitionKey, rowKey);
-            if (order == null)
-                return NotFound();
+            var deleteUrl = $"{_baseFunctionUrl}DeleteOrder?partitionKey={partitionKey}&rowKey={rowKey}";
+            var response = await _httpClient.DeleteAsync(deleteUrl);
 
-            return View(order);
-        }
+            if (!response.IsSuccessStatusCode)
+            {
+                TempData["Error"] = "Failed to delete order via Azure Function.";
+            }
+            else
+            {
+                TempData["Success"] = "Order deleted successfully.";
+            }
 
-        // POST: Orders/Delete/5
-        [HttpPost]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Delete(Orders order)
-        {
-            await _orderService.DeleteOrderAsync(order.PartitionKey, order.RowKey);
-            return RedirectToAction(nameof(Index));
+            return RedirectToAction("Index");
         }
     }
 }

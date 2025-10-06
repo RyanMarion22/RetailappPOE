@@ -7,8 +7,8 @@
 }
 
 <h1>Create Order</h1>
+<form asp-action="AddOrder" method="post">
 
-<form asp-action="Create" method="post">
     <div class="form-group">
         <label asp-for="CustomerId" class="control-label">Customer</label>
         <select asp-for="CustomerId" class="form-control" asp-items="@(new SelectList(customers, "RowKey", "Name"))">

@@ -1,44 +1,49 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using RetailappPOE.Models;
-using RetailappPOE.Services;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+using Microsoft.AspNetCore.Http;
 
 namespace RetailappPOE.Controllers
 {
     public class FilesController : Controller
     {
-        private readonly FilesService _fileService;
-        private readonly long _maxFileSize = 10 * 1024 * 1024; // 10 MB limit
-        private readonly string[] _allowedExtensions =
-     { ".jpg", ".jpeg", ".png", ".gif", ".pdf", ".docx", ".xlsx", ".txt" };
+        private readonly HttpClient _httpClient;
+        private readonly string _baseFunctionUrl = "https://ryanst10440289part2-a3avddhxerhyhke4.southafricanorth-01.azurewebsites.net/api/";
 
-
-        public FilesController(FilesService fileService)
+        public FilesController(HttpClient httpClient)
         {
-            _fileService = fileService;
+            _httpClient = httpClient;
         }
 
-        // List files
         public async Task<IActionResult> Index()
         {
-            try
+            var response = await _httpClient.GetAsync(_baseFunctionUrl + "uploads");
+
+            if (!response.IsSuccessStatusCode)
             {
-                var files = await _fileService.GetFilesAsync();
-                return View(files);
-            }
-            catch (Exception ex)
-            {
-                ViewBag.Error = "Error loading files: " + ex.Message;
+                ViewBag.Error = "Failed to load files from Azure Function.";
                 return View(new List<FilesModel>());
             }
+
+            var content = await response.Content.ReadAsStringAsync();
+            var files = JsonSerializer.Deserialize<List<FilesModel>>(content, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            return View(files);
         }
 
-        // Upload file (GET)
+        [HttpGet]
         public IActionResult Upload()
         {
             return View();
         }
 
-        // Upload file (POST)
         [HttpPost]
         public async Task<IActionResult> Upload(IFormFile file)
         {
@@ -48,67 +53,62 @@ namespace RetailappPOE.Controllers
                 return View();
             }
 
-            // Validate file size
-            if (file.Length > _maxFileSize)
-            {
-                ModelState.AddModelError("", $"File size cannot exceed {_maxFileSize / (1024 * 1024)} MB.");
-                return View();
-            }
+            using var ms = new MemoryStream();
+            await file.CopyToAsync(ms);
+            var bytes = ms.ToArray();
+            var base64 = Convert.ToBase64String(bytes);
 
-            // Validate file extension
-            var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
-            if (!_allowedExtensions.Contains(extension))
+            var payload = new
             {
-                ModelState.AddModelError("", $"File type not allowed. Allowed types: {string.Join(", ", _allowedExtensions)}");
-                return View();
-            }
+                FileName = file.FileName,
+                Base64 = base64
+            };
 
-            try
+            var json = JsonSerializer.Serialize(payload);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.PostAsync(_baseFunctionUrl + "blobs/upload", content);
+
+            if (response.IsSuccessStatusCode)
             {
-                await _fileService.UploadFileAsync(file);
-                TempData["Message"] = "File uploaded successfully!";
+                TempData["Success"] = "File uploaded successfully.";
                 return RedirectToAction("Index");
             }
-            catch (Exception ex)
-            {
-                ModelState.AddModelError("", "Error uploading file: " + ex.Message);
-                return View();
-            }
+
+            ModelState.AddModelError("", "Failed to upload file via Azure Function.");
+            return View();
         }
 
-        // Download file
-        public async Task<IActionResult> Download(string fileName)
-        {
-            try
-            {
-                var stream = await _fileService.DownloadFileAsync(fileName);
-
-                if (stream == null)
-                    return NotFound();
-
-                return File(stream, "application/octet-stream", fileName);
-            }
-            catch (Exception ex)
-            {
-                TempData["Error"] = "Error downloading file: " + ex.Message;
-                return RedirectToAction("Index");
-            }
-        }
-
-        // Delete file
+        [HttpPost]
         public async Task<IActionResult> Delete(string fileName)
         {
-            try
+            var deleteUrl = $"{_baseFunctionUrl}DeleteFile?fileName={fileName}";
+            var response = await _httpClient.DeleteAsync(deleteUrl);
+
+            if (!response.IsSuccessStatusCode)
             {
-                await _fileService.DeleteFileAsync(fileName);
-                TempData["Message"] = "File deleted successfully!";
+                TempData["Error"] = "Failed to delete file via Azure Function.";
             }
-            catch (Exception ex)
+            else
             {
-                TempData["Error"] = "Error deleting file: " + ex.Message;
+                TempData["Success"] = "File deleted successfully.";
             }
 
             return RedirectToAction("Index");
+        }
+
+        public async Task<IActionResult> Download(string fileName)
+        {
+            var response = await _httpClient.GetAsync($"{_baseFunctionUrl}DownloadFile?fileName={fileName}");
+
+            if (!response.IsSuccessStatusCode)
+            {
+                TempData["Error"] = "Failed to download file via Azure Function.";
+                return RedirectToAction("Index");
+            }
+
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            return File(bytes, "application/octet-stream", fileName);
         }
     }
 }

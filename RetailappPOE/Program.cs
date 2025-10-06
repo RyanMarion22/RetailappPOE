@@ -5,7 +5,7 @@ var configuration = builder.Configuration;
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
-
+builder.Services.AddHttpClient();
 // For Customers
 builder.Services.AddSingleton<TableStorageService>(provider =>
     new TableStorageService(

@@ -1,59 +1,89 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using RetailappPOE.Models;
-using RetailappPOE.Services;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+using System.Collections.Generic;
 
 namespace RetailappPOE.Controllers
 {
     public class ProductController : Controller
     {
-        private readonly TableStorageService _tableService;
-        private readonly BlobService _blobService;
+        private readonly HttpClient _httpClient;
+        private readonly string _baseFunctionUrl = "https://ryanst10440289part2-a3avddhxerhyhke4.southafricanorth-01.azurewebsites.net/api/";
 
-        public ProductController(IConfiguration config, BlobService blobService)
+        public ProductController(HttpClient httpClient)
         {
-            var connectionString = config.GetConnectionString("AzureTableStorage")
-                ?? throw new InvalidOperationException("AzureTableStorage connection string not found.");
-
-            _tableService = new TableStorageService(connectionString, "Products");
-            _blobService = blobService;
+            _httpClient = httpClient;
         }
 
+        // ==================== VIEW ALL PRODUCTS ====================
         public async Task<IActionResult> Index()
         {
-            var products = await _tableService.GetProductsAsync();
+            var response = await _httpClient.GetAsync(_baseFunctionUrl + "products");
+
+            if (!response.IsSuccessStatusCode)
+            {
+                ViewBag.Error = "Failed to load products from Azure Function.";
+                return View(new List<Product>());
+            }
+
+            var content = await response.Content.ReadAsStringAsync();
+            var products = JsonSerializer.Deserialize<List<Product>>(content, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
             return View(products);
         }
 
-        public IActionResult Create() => View();
+        // ==================== CREATE PRODUCT (GET) ====================
+        [HttpGet]
+        public IActionResult Create()
+        {
+            return View(new Product());
+        }
 
+        // ==================== CREATE PRODUCT (POST) ====================
         [HttpPost]
-        public async Task<IActionResult> Create(Product product, IFormFile imageFile)
+        public async Task<IActionResult> Create(Product product)
         {
             if (!ModelState.IsValid)
                 return View(product);
 
-            if (imageFile != null)
+            var json = JsonSerializer.Serialize(product);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.PostAsync(_baseFunctionUrl + "products", content);
+
+            if (response.IsSuccessStatusCode)
             {
-                using var stream = imageFile.OpenReadStream();
-                var fileName = $"{Guid.NewGuid()}_{Path.GetFileName(imageFile.FileName)}";
-                var imageUrl = await _blobService.UploadAsync(stream, fileName);
-                product.ImageUrl = imageUrl;
+                TempData["Success"] = "Product added successfully.";
+                return RedirectToAction("Index");
             }
 
-            await _tableService.AddProductAsync(product);
-            return RedirectToAction(nameof(Index));
+            ModelState.AddModelError("", "Failed to add product via Azure Function.");
+            return View(product);
         }
 
+        // ==================== DELETE PRODUCT ====================
         [HttpPost]
-        public async Task<IActionResult> Delete(string partitionKey, string rowKey, string imageUrl)
+        public async Task<IActionResult> Delete(string partitionKey, string rowKey)
         {
-            if (!string.IsNullOrWhiteSpace(imageUrl))
+            var deleteUrl = $"{_baseFunctionUrl}DeleteProduct?partitionKey={partitionKey}&rowKey={rowKey}";
+            var response = await _httpClient.DeleteAsync(deleteUrl);
+
+            if (!response.IsSuccessStatusCode)
             {
-                await _blobService.DeleteBlobAsync(imageUrl);
+                TempData["Error"] = "Failed to delete product via Azure Function.";
+            }
+            else
+            {
+                TempData["Success"] = "Product deleted successfully.";
             }
 
-            await _tableService.DeleteProductAsync(partitionKey, rowKey);
-            return RedirectToAction(nameof(Index));
+            return RedirectToAction("Index");
         }
     }
 }

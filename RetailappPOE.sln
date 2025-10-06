@@ -1,9 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.13.35806.99 d17.13
+VisualStudioVersion = 17.13.35806.99
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RetailappPOE", "RetailappPOE\RetailappPOE.csproj", "{083C705B-BE8F-4DE3-9FFA-794C65A55C1A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RetailappPOEFunctions", "RetailappPOEFunctions\RetailappPOEFunctions.csproj", "{6B6855A3-9452-4098-9B4E-69043C14037E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,6 +17,10 @@ Global
 		{083C705B-BE8F-4DE3-9FFA-794C65A55C1A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{083C705B-BE8F-4DE3-9FFA-794C65A55C1A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{083C705B-BE8F-4DE3-9FFA-794C65A55C1A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6B6855A3-9452-4098-9B4E-69043C14037E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6B6855A3-9452-4098-9B4E-69043C14037E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6B6855A3-9452-4098-9B4E-69043C14037E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6B6855A3-9452-4098-9B4E-69043C14037E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

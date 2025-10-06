@@ -1,79 +1,92 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using RetailappPOE.Models;
-using RetailappPOE.Services;
+﻿using RetailappPOE.Models;
+using Microsoft.AspNetCore.Mvc;
+using System.Net.Http;
+using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+
 
 namespace RetailappPOE.Controllers
 {
     public class CustomersController : Controller
     {
-        private readonly TableStorageService _tableStorageService;
-        private readonly ILogger<CustomersController> _logger;
+        private readonly HttpClient _httpClient;
+        private readonly string _baseFunctionUrl = "https://ryanst10440289part2-a3avddhxerhyhke4.southafricanorth-01.azurewebsites.net/api/";
 
-        public CustomersController(TableStorageService tableStorageService, ILogger<CustomersController> logger)
+
+        public CustomersController(HttpClient httpClient)
         {
-            _tableStorageService = tableStorageService ?? throw new ArgumentNullException(nameof(tableStorageService));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _httpClient = httpClient;
         }
 
-        // GET: Display all customers
+        // ==================== VIEW ALL CUSTOMERS ====================
         public async Task<IActionResult> Index()
         {
-            try
+            var response = await _httpClient.GetAsync(_baseFunctionUrl + "customers");
+
+            if (!response.IsSuccessStatusCode)
             {
-                var customers = await _tableStorageService.GetCustomersAsync();
-                return View(customers);
+                ViewBag.Error = "Failed to load customers from Azure Function.";
+                return View(new List<Customers>());
             }
-            catch (Exception ex)
+
+            var content = await response.Content.ReadAsStringAsync();
+            var customers = JsonSerializer.Deserialize<List<Customers>>(content, new JsonSerializerOptions
             {
-                _logger.LogError(ex, "Error retrieving customers.");
-                return View("Error", new { message = "An error occurred while retrieving customers." });
-            }
+                PropertyNameCaseInsensitive = true
+            });
+
+            return View(customers);
         }
 
-        // GET: Show form to create a new customer
-        public IActionResult Create() => View(new Customers());
+        // ==================== ADD CUSTOMER (GET) ====================
+        [HttpGet]
+        public IActionResult Create()
+        {
+            return View(new Customers());
+        }
 
+        // ==================== ADD CUSTOMER (POST) ====================
         [HttpPost]
-        public async Task<IActionResult> AddCustomer(Customers customer)
+        public async Task<IActionResult> Create(Customers customer)
         {
             if (!ModelState.IsValid)
+                return View(customer);
+
+            var json = JsonSerializer.Serialize(customer);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.PostAsync(_baseFunctionUrl + "customers", content);
+
+            if (response.IsSuccessStatusCode)
             {
-                return View("Create", customer);
+                TempData["Success"] = "Customer added successfully.";
+                return RedirectToAction("Index");
             }
 
-            try
-            {
-                customer.PartitionKey ??= "CUSTOMER";
-                customer.RowKey ??= Guid.NewGuid().ToString();
-                await _tableStorageService.AddCustomerAsync(customer);
-                return RedirectToAction(nameof(Index));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error saving customer.");
-                ModelState.AddModelError(string.Empty, "An error occurred while saving the customer.");
-                return View("Create", customer);
-            }
+            ModelState.AddModelError("", "Failed to add customer via Azure Function.");
+            return View(customer);
         }
 
-        // GET: Delete a customer
+        // ==================== DELETE CUSTOMER ====================
+        [HttpPost]
         public async Task<IActionResult> Delete(string partitionKey, string rowKey)
         {
-            if (string.IsNullOrWhiteSpace(partitionKey) || string.IsNullOrWhiteSpace(rowKey))
+            var deleteUrl = $"{_baseFunctionUrl}DeleteCustomer?partitionKey={partitionKey}&rowKey={rowKey}";
+            var response = await _httpClient.DeleteAsync(deleteUrl);
+
+            if (!response.IsSuccessStatusCode)
             {
-                return RedirectToAction(nameof(Index));
+                TempData["Error"] = "Failed to delete customer via Azure Function.";
+            }
+            else
+            {
+                TempData["Success"] = "Customer deleted successfully.";
             }
 
-            try
-            {
-                await _tableStorageService.DeleteCustomerAsync(partitionKey, rowKey);
-                return RedirectToAction(nameof(Index));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error deleting customer.");
-                return RedirectToAction(nameof(Index)); // Or show an error view
-            }
+            return RedirectToAction("Index");
         }
     }
 }
