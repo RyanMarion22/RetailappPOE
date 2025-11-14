@@ -1,18 +1,17 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using RetailappPOE.Models;
 using System.Net.Http;
-using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-using Microsoft.AspNetCore.Http;
+using System.Net.Http.Headers;
 
 namespace RetailappPOE.Controllers
 {
     public class FilesController : Controller
     {
         private readonly HttpClient _httpClient;
-        private readonly string _baseFunctionUrl = "https://ryanst10440289part2-a3avddhxerhyhke4.southafricanorth-01.azurewebsites.net/api/";
+        private readonly string _baseFunctionUrl = "http://localhost:7274/api/";
 
         public FilesController(HttpClient httpClient)
         {
@@ -22,10 +21,9 @@ namespace RetailappPOE.Controllers
         public async Task<IActionResult> Index()
         {
             var response = await _httpClient.GetAsync(_baseFunctionUrl + "uploads");
-
             if (!response.IsSuccessStatusCode)
             {
-                ViewBag.Error = "Failed to load files from Azure Function.";
+                ViewBag.Error = "Failed to load files.";
                 return View(new List<FilesModel>());
             }
 
@@ -33,7 +31,7 @@ namespace RetailappPOE.Controllers
             var files = JsonSerializer.Deserialize<List<FilesModel>>(content, new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
-            });
+            }) ?? new List<FilesModel>();
 
             return View(files);
         }
@@ -49,61 +47,50 @@ namespace RetailappPOE.Controllers
         {
             if (file == null || file.Length == 0)
             {
-                ModelState.AddModelError("", "Please select a file to upload.");
+                ModelState.AddModelError("", "Please select a file.");
                 return View();
             }
 
-            using var ms = new MemoryStream();
-            await file.CopyToAsync(ms);
-            var bytes = ms.ToArray();
-            var base64 = Convert.ToBase64String(bytes);
+            using var content = new MultipartFormDataContent();
+            using var fileStream = file.OpenReadStream();
+            var fileContent = new StreamContent(fileStream);
+            fileContent.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
+            content.Add(fileContent, "file", file.FileName); 
 
-            var payload = new
-            {
-                FileName = file.FileName,
-                Base64 = base64
-            };
-
-            var json = JsonSerializer.Serialize(payload);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            var response = await _httpClient.PostAsync(_baseFunctionUrl + "blobs/upload", content);
+            var response = await _httpClient.PostAsync(_baseFunctionUrl + "uploads", content);
 
             if (response.IsSuccessStatusCode)
             {
-                TempData["Success"] = "File uploaded successfully.";
+                TempData["Success"] = $"File '{file.FileName}' uploaded successfully!";
                 return RedirectToAction("Index");
             }
 
-            ModelState.AddModelError("", "Failed to upload file via Azure Function.");
+            var error = await response.Content.ReadAsStringAsync();
+            ModelState.AddModelError("", $"Upload failed: {error}");
             return View();
         }
 
         [HttpPost]
         public async Task<IActionResult> Delete(string fileName)
         {
-            var deleteUrl = $"{_baseFunctionUrl}DeleteFile?fileName={fileName}";
-            var response = await _httpClient.DeleteAsync(deleteUrl);
-
-            if (!response.IsSuccessStatusCode)
+            var response = await _httpClient.DeleteAsync($"{_baseFunctionUrl}uploads/{fileName}");
+            if (response.IsSuccessStatusCode)
             {
-                TempData["Error"] = "Failed to delete file via Azure Function.";
+                TempData["Success"] = "File deleted.";
             }
             else
             {
-                TempData["Success"] = "File deleted successfully.";
+                TempData["Error"] = "Failed to delete file.";
             }
-
             return RedirectToAction("Index");
         }
 
         public async Task<IActionResult> Download(string fileName)
         {
-            var response = await _httpClient.GetAsync($"{_baseFunctionUrl}DownloadFile?fileName={fileName}");
-
+            var response = await _httpClient.GetAsync($"{_baseFunctionUrl}uploads/download/{fileName}");
             if (!response.IsSuccessStatusCode)
             {
-                TempData["Error"] = "Failed to download file via Azure Function.";
+                TempData["Error"] = "File not found.";
                 return RedirectToAction("Index");
             }
 

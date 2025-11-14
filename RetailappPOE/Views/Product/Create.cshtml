@@ -1,69 +1,44 @@
-﻿@model IEnumerable<RetailappPOE.Models.Product>
+﻿@model RetailappPOE.Models.Product
 
 @{
-    ViewData["Title"] = "Products";
+    ViewData["Title"] = "Create Product";
 }
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 class="text-light fw-bold">Products</h2>
-    <a asp-action="Create" class="btn btn-lg btn-success fw-bold shadow rounded-pill px-4">
-        + Add Product
-    </a>
+<div class="card p-4 shadow-sm">
+    <h2 class="mb-3 text-dark">Create Product</h2>
+    <form asp-action="Create" method="post">
+        @Html.AntiForgeryToken()
+        <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+        <div class="form-group mb-3">
+            <label asp-for="Name" class="control-label"></label>
+            <input asp-for="Name" class="form-control" />
+            <span asp-validation-for="Name" class="text-danger"></span>
+        </div>
+
+        <div class="form-group mb-3">
+            <label asp-for="Description" class="control-label"></label>
+            <textarea asp-for="Description" class="form-control" rows="3"></textarea>
+            <span asp-validation-for="Description" class="text-danger"></span>
+        </div>
+
+        <div class="form-group mb-3">
+            <label asp-for="Price" class="control-label"></label>
+            <input asp-for="Price" type="number" step="0.01" min="0.01" class="form-control" />
+            <span asp-validation-for="Price" class="text-danger"></span>
+        </div>
+
+        <div class="form-group mb-3">
+            <label asp-for="ImageUrl" class="control-label">Image URL (optional)</label>
+            <input asp-for="ImageUrl" class="form-control" />
+            <span asp-validation-for="ImageUrl" class="text-danger"></span>
+        </div>
+
+        <button type="submit" class="btn btn-success">Save</button>
+        <a asp-action="Index" class="btn btn-secondary ms-2">Back</a>
+    </form>
 </div>
 
-<div class="table-responsive">
-    <table class="table table-dark table-hover table-bordered align-middle shadow-sm">
-        <thead class="table-light">
-            <tr class="text-center">
-                <th>Name</th>
-                <th>Description</th>
-                <th>Price</th>
-                <th>Image</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var p in Model)
-            {
-                <tr class="text-center">
-                    <td class="fw-bold">@p.Name</td>
-                    <td>@p.Description</td>
-                    <td>R @p.Price</td>
-                    <td>
-                        @if (!string.IsNullOrEmpty(p.ImageUrl))
-                        {
-                            <img src="@p.ImageUrl" width="140" height="140"
-                                 class="img-thumbnail rounded shadow-sm border border-light" />
-                        }
-                    </td>
-                    <td>
-                        <button type="button"
-                                class="btn btn-sm btn-danger rounded-pill px-3 shadow"
-                                onclick="deleteProduct('@p.PartitionKey','@p.RowKey')">
-                            Delete
-                        </button>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-</div>
-
-<script>
-    function deleteProduct(partitionKey, rowKey) {
-        if(!confirm('Are you sure you want to delete this product?')) return;
-
-        fetch(`/api/products/${partitionKey}/${rowKey}`, {
-            method: 'DELETE'
-        })
-        .then(res => {
-            if(res.ok){
-                alert('Product deleted successfully!');
-                location.reload(); // Refresh page to reflect deletion
-            } else {
-                res.text().then(text => alert('Error deleting product: ' + text));
-            }
-        })
-        .catch(err => alert('Request failed: ' + err));
-    }
-</script>
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

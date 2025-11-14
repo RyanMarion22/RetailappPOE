@@ -10,6 +10,7 @@ using Azure.Data.Tables;
 using Azure.Storage.Queues;
 using Azure.Storage.Blobs;
 using Azure.Storage.Files.Shares;
+using Azure.Storage.Files.Shares.Models;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
@@ -23,7 +24,6 @@ namespace RetailappPOEFunctions
     {
         private readonly ILogger<FunctionEndpoints> _logger;
         private readonly string _storageConn;
-
         private const string CustomerTableName = "Customers";
         private const string ProductTableName = "Products";
         private const string OrderTableName = "Orders";
@@ -38,31 +38,22 @@ namespace RetailappPOEFunctions
         }
 
         // ========================= QUEUE TRIGGERS =========================
-
         [Function("QueueCustomerSender")]
         public async Task QueueCustomerSender(
             [QueueTrigger("customer-queue", Connection = "AzureWebJobsStorage")] string queueMessage,
             FunctionContext ctx)
         {
             _logger.LogInformation("Processing customer queue message.");
-
             try
             {
                 var table = new TableClient(_storageConn, CustomerTableName);
                 await table.CreateIfNotExistsAsync();
-
                 var customer = JsonSerializer.Deserialize<CustomerEntity>(queueMessage, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                if (customer == null)
-                {
-                    _logger.LogError("Failed to deserialize customer JSON");
-                    return;
-                }
-
-                customer.RowKey = Guid.NewGuid().ToString();
+                if (customer == null) { _logger.LogError("Failed to deserialize customer"); return; }
                 customer.PartitionKey = "Customers";
-
+                customer.RowKey ??= Guid.NewGuid().ToString();
                 await table.AddEntityAsync(customer);
-                _logger.LogInformation("Saved customer {Name} to Table Storage", customer.Name);
+                _logger.LogInformation("Saved customer {Name}", customer.Name);
             }
             catch (Exception ex)
             {
@@ -77,24 +68,16 @@ namespace RetailappPOEFunctions
             FunctionContext ctx)
         {
             _logger.LogInformation("Processing product queue message.");
-
             try
             {
                 var table = new TableClient(_storageConn, ProductTableName);
                 await table.CreateIfNotExistsAsync();
-
-                var product = JsonSerializer.Deserialize<ProductEntity>(queueMessage, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                if (product == null)
-                {
-                    _logger.LogError("Failed to deserialize product JSON");
-                    return;
-                }
-
-                product.RowKey = Guid.NewGuid().ToString();
+                var product = JsonSerializer.Deserialize<Product>(queueMessage, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (product == null) { _logger.LogError("Failed to deserialize product"); return; }
                 product.PartitionKey = "Products";
-
+                product.RowKey ??= Guid.NewGuid().ToString();
                 await table.AddEntityAsync(product);
-                _logger.LogInformation("Saved product {Name} to Table Storage", product.Name);
+                _logger.LogInformation("Saved product {Name}", product.Name);
             }
             catch (Exception ex)
             {
@@ -109,31 +92,16 @@ namespace RetailappPOEFunctions
             FunctionContext ctx)
         {
             _logger.LogInformation("Processing order queue message.");
-
             try
             {
-                var orderDto = JsonSerializer.Deserialize<Orders>(queueMessage, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                if (orderDto == null)
-                {
-                    _logger.LogError("Failed to deserialize order JSON");
-                    return;
-                }
-
+                var order = JsonSerializer.Deserialize<Orders>(queueMessage, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (order == null) { _logger.LogError("Failed to deserialize order"); return; }
                 var table = new TableClient(_storageConn, OrderTableName);
                 await table.CreateIfNotExistsAsync();
-
-                var orderEntity = new Orders
-                {
-                    PartitionKey = "Orders",
-                    RowKey = Guid.NewGuid().ToString(),
-                    CustomerId = orderDto.CustomerId,
-                    ProductId = orderDto.ProductId,
-                    Quantity = orderDto.Quantity,
-                    OrderDate = orderDto.OrderDate
-                };
-
-                await table.AddEntityAsync(orderEntity);
-                _logger.LogInformation("Saved order {RowKey} to Table Storage", orderEntity.RowKey);
+                order.PartitionKey = "Orders";
+                order.RowKey ??= Guid.NewGuid().ToString();
+                await table.AddEntityAsync(order);
+                _logger.LogInformation("Saved order {RowKey}", order.RowKey);
             }
             catch (Exception ex)
             {
@@ -142,198 +110,268 @@ namespace RetailappPOEFunctions
             }
         }
 
-        // ========================= GET ENDPOINTS =========================
+        // ========================= HTTP ENDPOINTS =========================
 
         [Function("GetCustomers")]
-        public async Task<HttpResponseData> GetCustomers([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "customers")] HttpRequestData req)
+        public async Task<HttpResponseData> GetCustomers(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "customers")] HttpRequestData req)
         {
             try
             {
                 var table = new TableClient(_storageConn, CustomerTableName);
                 await table.CreateIfNotExistsAsync();
-
-                var results = new List<CustomerEntity>();
-                await foreach (var e in table.QueryAsync<CustomerEntity>())
-                    results.Add(e);
-
+                var customers = new List<CustomerEntity>();
+                await foreach (var c in table.QueryAsync<CustomerEntity>(filter: "PartitionKey eq 'Customers'"))
+                {
+                    customers.Add(c);
+                }
                 var res = req.CreateResponse(HttpStatusCode.OK);
-                await res.WriteAsJsonAsync(results);
+                await res.WriteAsJsonAsync(customers);
                 return res;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to query customers");
-                var error = req.CreateResponse(HttpStatusCode.InternalServerError);
-                await error.WriteStringAsync("Error retrieving customers.");
-                return error;
+                _logger.LogError(ex, "GetCustomers failed");
+                var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+                await err.WriteStringAsync("Error retrieving customers.");
+                return err;
             }
         }
 
         [Function("GetProducts")]
-        public async Task<HttpResponseData> GetProducts([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "products")] HttpRequestData req)
+        public async Task<HttpResponseData> GetProducts(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "products")] HttpRequestData req)
         {
             try
             {
                 var table = new TableClient(_storageConn, ProductTableName);
                 await table.CreateIfNotExistsAsync();
-
-                var results = new List<ProductEntity>();
-                await foreach (var e in table.QueryAsync<ProductEntity>())
-                    results.Add(e);
-
+                var products = new List<Product>();
+                await foreach (var p in table.QueryAsync<Product>(filter: "PartitionKey eq 'Products'"))
+                {
+                    products.Add(p);
+                }
                 var res = req.CreateResponse(HttpStatusCode.OK);
-                await res.WriteAsJsonAsync(results);
+                await res.WriteAsJsonAsync(products);
                 return res;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to query products");
-                var error = req.CreateResponse(HttpStatusCode.InternalServerError);
-                await error.WriteStringAsync("Error retrieving products.");
-                return error;
+                _logger.LogError(ex, "GetProducts failed");
+                var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+                await err.WriteStringAsync("Error retrieving products.");
+                return err;
             }
         }
 
-        // ========================= ADD / DELETE PRODUCT =========================
+        [Function("GetOrders")]
+        public async Task<HttpResponseData> GetOrders(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "orders")] HttpRequestData req)
+        {
+            try
+            {
+                var table = new TableClient(_storageConn, OrderTableName);
+                await table.CreateIfNotExistsAsync();
+                var orders = new List<Orders>();
+                await foreach (var o in table.QueryAsync<Orders>(filter: "PartitionKey eq 'Orders'"))
+                {
+                    orders.Add(o);
+                }
+                var res = req.CreateResponse(HttpStatusCode.OK);
+                await res.WriteAsJsonAsync(orders);
+                return res;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetOrders failed");
+                var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+                await err.WriteStringAsync("Error retrieving orders.");
+                return err;
+            }
+        }
+
+        [Function("AddOrder")]
+        public async Task<HttpResponseData> AddOrder(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "orders")] HttpRequestData req)
+        {
+            string body = await new StreamReader(req.Body).ReadToEndAsync();
+            var order = JsonSerializer.Deserialize<Orders>(body,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (order == null ||
+                string.IsNullOrEmpty(order.CustomerId) ||
+                string.IsNullOrEmpty(order.ProductId) ||
+                order.Quantity <= 0)
+            {
+                var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+                await bad.WriteStringAsync("Invalid order: CustomerId, ProductId, and Quantity are required.");
+                return bad;
+            }
+            order.PartitionKey = "Orders";
+            order.RowKey ??= Guid.NewGuid().ToString();
+            order.Timestamp ??= DateTimeOffset.UtcNow;
+            try
+            {
+                var table = new TableClient(_storageConn, OrderTableName);
+                await table.CreateIfNotExistsAsync();
+                await table.AddEntityAsync(order);
+                var queue = new QueueClient(_storageConn, "order-queue");
+                await queue.CreateIfNotExistsAsync();
+                await queue.SendMessageAsync(JsonSerializer.Serialize(order));
+                var ok = req.CreateResponse(HttpStatusCode.Created);
+                await ok.WriteStringAsync("Order added successfully.");
+                return ok;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "AddOrder failed");
+                var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+                await err.WriteStringAsync($"Failed: {ex.Message}");
+                return err;
+            }
+        }
+
+        [Function("DeleteOrder")]
+        public async Task<HttpResponseData> DeleteOrder(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "orders/{partitionKey}/{rowKey}")] HttpRequestData req,
+            string partitionKey, string rowKey)
+        {
+            try
+            {
+                var table = new TableClient(_storageConn, OrderTableName);
+                await table.DeleteEntityAsync(partitionKey, rowKey);
+                var res = req.CreateResponse(HttpStatusCode.OK);
+                await res.WriteStringAsync("Order deleted.");
+                return res;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "DeleteOrder failed");
+                var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+                await err.WriteStringAsync("Failed to delete order.");
+                return err;
+            }
+        }
+
+        [Function("AddCustomer")]
+        public async Task<HttpResponseData> AddCustomer(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "customers")] HttpRequestData req)
+        {
+            string body = await new StreamReader(req.Body).ReadToEndAsync();
+            var customer = JsonSerializer.Deserialize<CustomerEntity>(body,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (customer == null ||
+                string.IsNullOrEmpty(customer.FirstName) ||
+                string.IsNullOrEmpty(customer.LastName) ||
+                string.IsNullOrEmpty(customer.Email))
+            {
+                var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+                await bad.WriteStringAsync("FirstName, LastName, and Email are required.");
+                return bad;
+            }
+            customer.PartitionKey = "Customers";
+            customer.RowKey ??= Guid.NewGuid().ToString();
+            try
+            {
+                var table = new TableClient(_storageConn, CustomerTableName);
+                await table.CreateIfNotExistsAsync();
+                await table.AddEntityAsync(customer);
+                var queue = new QueueClient(_storageConn, "customer-queue");
+                await queue.CreateIfNotExistsAsync();
+                await queue.SendMessageAsync(JsonSerializer.Serialize(customer));
+                var ok = req.CreateResponse(HttpStatusCode.Created);
+                await ok.WriteStringAsync("Customer added successfully.");
+                return ok;
+            }
+            catch (Exception ex)
+            {
+                var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+                await err.WriteStringAsync($"Failed: {ex.Message}");
+                return err;
+            }
+        }
 
         [Function("AddProduct")]
-        public async Task<HttpResponseData> AddProduct([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "products")] HttpRequestData req)
+        public async Task<HttpResponseData> AddProduct(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "products")] HttpRequestData req)
         {
-            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-            var product = JsonSerializer.Deserialize<ProductEntity>(requestBody, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
+            string body = await new StreamReader(req.Body).ReadToEndAsync();
+            var product = JsonSerializer.Deserialize<Product>(body,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             if (product == null || string.IsNullOrEmpty(product.Name))
             {
                 var bad = req.CreateResponse(HttpStatusCode.BadRequest);
-                await bad.WriteStringAsync("Invalid product data");
+                await bad.WriteStringAsync("Product name is required.");
                 return bad;
             }
-
             product.PartitionKey = "Products";
-            product.RowKey = Guid.NewGuid().ToString();
-
-            var table = new TableClient(_storageConn, ProductTableName);
-            await table.CreateIfNotExistsAsync();
-            await table.AddEntityAsync(product);
-
-            var response = req.CreateResponse(HttpStatusCode.Created);
-            await response.WriteStringAsync("Product added successfully");
-            return response;
+            product.RowKey ??= Guid.NewGuid().ToString();
+            try
+            {
+                var table = new TableClient(_storageConn, ProductTableName);
+                await table.CreateIfNotExistsAsync();
+                await table.AddEntityAsync(product);
+                var ok = req.CreateResponse(HttpStatusCode.Created);
+                await ok.WriteStringAsync("Product added successfully.");
+                return ok;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "AddProduct failed");
+                var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+                await err.WriteStringAsync($"Failed: {ex.Message}");
+                return err;
+            }
         }
 
         [Function("DeleteProduct")]
-        public async Task<HttpResponseData> DeleteProduct([HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "products/{partitionKey}/{rowKey}")] HttpRequestData req, string partitionKey, string rowKey)
+        public async Task<HttpResponseData> DeleteProduct(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "products/{partitionKey}/{rowKey}")] HttpRequestData req,
+            string partitionKey, string rowKey)
         {
             try
             {
                 var table = new TableClient(_storageConn, ProductTableName);
                 await table.DeleteEntityAsync(partitionKey, rowKey);
-
                 var res = req.CreateResponse(HttpStatusCode.OK);
-                await res.WriteStringAsync("Product deleted successfully");
+                await res.WriteStringAsync("Product deleted.");
                 return res;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to delete product");
-                var error = req.CreateResponse(HttpStatusCode.InternalServerError);
-                await error.WriteStringAsync("Failed to delete product.");
-                return error;
+                _logger.LogError(ex, "DeleteProduct failed");
+                var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+                await err.WriteStringAsync("Failed to delete product.");
+                return err;
             }
         }
 
-        // ========================= ADD CUSTOMER =========================
-
-        [Function("AddCustomer")]
-        public async Task<HttpResponseData> AddCustomer([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "customers")] HttpRequestData req)
+        [Function("DeleteCustomer")]
+        public async Task<HttpResponseData> DeleteCustomer(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "customers/{partitionKey}/{rowKey}")] HttpRequestData req,
+            string partitionKey, string rowKey)
         {
-            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-            var newCustomer = JsonSerializer.Deserialize<CustomerEntity>(requestBody, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-            if (newCustomer == null || string.IsNullOrEmpty(newCustomer.Name) || string.IsNullOrEmpty(newCustomer.Email))
-            {
-                var badResponse = req.CreateResponse(HttpStatusCode.BadRequest);
-                await badResponse.WriteStringAsync("Invalid customer data. Name and Email are required.");
-                return badResponse;
-            }
-
-            newCustomer.PartitionKey = "Customers";
-            newCustomer.RowKey = Guid.NewGuid().ToString();
-
             try
             {
                 var table = new TableClient(_storageConn, CustomerTableName);
-                await table.CreateIfNotExistsAsync();
-                await table.AddEntityAsync(newCustomer);
-
-                var queueClient = new QueueClient(_storageConn, "customer-queue");
-                await queueClient.CreateIfNotExistsAsync();
-                string json = JsonSerializer.Serialize(newCustomer);
-                await queueClient.SendMessageAsync(json);
-
-                var response = req.CreateResponse(HttpStatusCode.Created);
-                await response.WriteStringAsync("Customer added successfully.");
-                return response;
+                await table.DeleteEntityAsync(partitionKey, rowKey);
+                var res = req.CreateResponse(HttpStatusCode.OK);
+                await res.WriteStringAsync("Customer deleted.");
+                return res;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to add customer");
-                var error = req.CreateResponse(HttpStatusCode.InternalServerError);
-                await error.WriteStringAsync("Failed to add customer.");
-                return error;
-            }
-        }
-
-        // ========================= ADD ORDER =========================
-
-        [Function("AddOrder")]
-        public async Task<HttpResponseData> AddOrder([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "orders")] HttpRequestData req)
-        {
-            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-
-            var newOrder = JsonSerializer.Deserialize<Orders>(requestBody, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-            if (newOrder == null || string.IsNullOrEmpty(newOrder.CustomerId) || string.IsNullOrEmpty(newOrder.ProductId) || newOrder.Quantity <= 0)
-            {
-                var badResponse = req.CreateResponse(HttpStatusCode.BadRequest);
-                await badResponse.WriteStringAsync("Invalid order data. Make sure CustomerId, ProductId, and Quantity are provided.");
-                return badResponse;
-            }
-
-            newOrder.PartitionKey = "Orders";
-            newOrder.RowKey = Guid.NewGuid().ToString();
-            newOrder.Timestamp = DateTimeOffset.UtcNow;
-            newOrder.OrderDate = DateTime.SpecifyKind(newOrder.OrderDate, DateTimeKind.Utc);
-
-            try
-            {
-                var table = new TableClient(_storageConn, OrderTableName);
-                await table.CreateIfNotExistsAsync();
-                await table.AddEntityAsync(newOrder);
-
-                var queueClient = new QueueClient(_storageConn, "order-queue");
-                await queueClient.CreateIfNotExistsAsync();
-
-                string json = JsonSerializer.Serialize(newOrder);
-                await queueClient.SendMessageAsync(json);
-
-                var response = req.CreateResponse(HttpStatusCode.Created);
-                await response.WriteStringAsync("Order added successfully and queued.");
-                return response;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to add order");
-                var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
-                await errorResponse.WriteStringAsync($"Failed to add order: {ex.Message}");
-                return errorResponse;
+                _logger.LogError(ex, "DeleteCustomer failed");
+                var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+                await err.WriteStringAsync("Failed to delete customer.");
+                return err;
             }
         }
 
         // ========================= FILE UPLOADS =========================
 
         [Function("UploadToAzureFiles")]
-        public async Task<HttpResponseData> UploadToAzureFiles([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "uploads")] HttpRequestData req)
+        public async Task<HttpResponseData> UploadToAzureFiles(
+     [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "uploads")] HttpRequestData req)
         {
             try
             {
@@ -373,6 +411,7 @@ namespace RetailappPOEFunctions
                 {
                     if (ContentDispositionHeaderValue.TryParse(section.ContentDisposition, out var cd) &&
                         cd.DispositionType.Equals("form-data") &&
+                        cd.Name.Value == "file" && // ACCEPT ONLY "file" FIELD
                         !string.IsNullOrEmpty(cd.FileName.Value))
                     {
                         var fileName = cd.FileName.Value.Trim('"');
@@ -382,10 +421,8 @@ namespace RetailappPOEFunctions
 
                         var share = new ShareClient(_storageConn, UploadShareName);
                         await share.CreateIfNotExistsAsync();
-
                         var root = share.GetRootDirectoryClient();
                         var fileClient = root.GetFileClient(fileName);
-
                         await fileClient.CreateAsync(ms.Length);
                         ms.Position = 0;
                         await fileClient.UploadRangeAsync(new Azure.HttpRange(0, ms.Length), ms);
@@ -394,7 +431,6 @@ namespace RetailappPOEFunctions
                         await ok.WriteStringAsync($"File '{fileName}' uploaded successfully!");
                         return ok;
                     }
-
                     section = await reader.ReadNextSectionAsync();
                 }
 
@@ -412,25 +448,25 @@ namespace RetailappPOEFunctions
         }
 
         [Function("GetUploadedFiles")]
-        public async Task<HttpResponseData> GetUploadedFiles([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "uploads")] HttpRequestData req)
+        public async Task<HttpResponseData> GetUploadedFiles(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "uploads")] HttpRequestData req)
         {
             try
             {
                 var files = new List<FileEntity>();
                 var share = new ShareClient(_storageConn, UploadShareName);
                 await share.CreateIfNotExistsAsync();
-
                 var root = share.GetRootDirectoryClient();
+
                 await foreach (var item in root.GetFilesAndDirectoriesAsync())
                 {
                     if (!item.IsDirectory)
                     {
                         var fileClient = root.GetFileClient(item.Name);
                         var props = await fileClient.GetPropertiesAsync();
-
                         files.Add(new FileEntity
                         {
-                            FileName = item.Name,
+                            Name = item.Name,
                             Size = props.Value.ContentLength,
                             DisplaySize = FormatSize(props.Value.ContentLength),
                             LastModified = props.Value.LastModified
@@ -451,8 +487,68 @@ namespace RetailappPOEFunctions
             }
         }
 
+        [Function("DeleteFile")]
+        public async Task<HttpResponseData> DeleteFile(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "uploads/{fileName}")] HttpRequestData req,
+            string fileName)
+        {
+            try
+            {
+                var share = new ShareClient(_storageConn, UploadShareName);
+                var root = share.GetRootDirectoryClient();
+                var fileClient = root.GetFileClient(fileName);
+                await fileClient.DeleteIfExistsAsync();
+
+                var res = req.CreateResponse(HttpStatusCode.OK);
+                await res.WriteStringAsync("File deleted.");
+                return res;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Delete failed");
+                var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+                await err.WriteStringAsync("Failed to delete file.");
+                return err;
+            }
+        }
+
+        [Function("DownloadFile")]
+        public async Task<HttpResponseData> DownloadFile(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "uploads/download/{fileName}")] HttpRequestData req,
+            string fileName)
+        {
+            try
+            {
+                var share = new ShareClient(_storageConn, UploadShareName);
+                var root = share.GetRootDirectoryClient();
+                var fileClient = root.GetFileClient(fileName);
+
+                if (!await fileClient.ExistsAsync())
+                {
+                    var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+                    await notFound.WriteStringAsync("File not found.");
+                    return notFound;
+                }
+
+                var download = await fileClient.DownloadAsync();
+                var res = req.CreateResponse(HttpStatusCode.OK);
+                res.Headers.Add("Content-Disposition", $"attachment; filename=\"{fileName}\"");
+                res.Headers.Add("Content-Type", "application/octet-stream");
+                res.Body = download.Value.Content;
+                return res;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Download failed");
+                var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+                await err.WriteStringAsync("Failed to download file.");
+                return err;
+            }
+        }
+
         [Function("UploadProductImage")]
-        public async Task<HttpResponseData> UploadProductImage([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "blobs/upload")] HttpRequestData req)
+        public async Task<HttpResponseData> UploadProductImage(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "blobs/upload")] HttpRequestData req)
         {
             string body = await new StreamReader(req.Body).ReadToEndAsync();
             if (string.IsNullOrWhiteSpace(body))
@@ -491,7 +587,6 @@ namespace RetailappPOEFunctions
                 var blobService = new BlobServiceClient(_storageConn);
                 var container = blobService.GetBlobContainerClient(ImageContainerName);
                 await container.CreateIfNotExistsAsync();
-
                 string unique = $"{Guid.NewGuid()}_{Path.GetFileName(payload.FileName)}";
                 var client = container.GetBlobClient(unique);
                 using var ms = new MemoryStream(bytes);
@@ -510,18 +605,26 @@ namespace RetailappPOEFunctions
             }
         }
 
-        // Helper DTO
+        // ========================= HELPER CLASSES =========================
+
         private class FileUploadDto
         {
-            public string FileName { get; set; }
-            public string Base64 { get; set; }
+            public string FileName { get; set; } = "";
+            public string Base64 { get; set; } = "";
         }
 
-        // Helper method
+        private class FileEntity
+        {
+            public string Name { get; set; } = "";
+            public long Size { get; set; }
+            public string DisplaySize { get; set; } = "";
+            public DateTimeOffset LastModified { get; set; }
+        }
+
         private static string FormatSize(long bytes)
         {
             if (bytes >= 1024 * 1024)
-                return $"{bytes / (1024 * 1024.0):F2} MB";
+                return $"{bytes / (1024.0 * 1024):F2} MB";
             else if (bytes >= 1024)
                 return $"{bytes / 1024.0:F2} KB";
             else

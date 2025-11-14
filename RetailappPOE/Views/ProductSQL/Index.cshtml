@@ -1,0 +1,36 @@
+﻿@model IEnumerable<RetailappPOE.Models.ProductSQL>
+
+<h2>Products</h2>
+<p><a asp-action="Create">Add New Product</a></p>
+
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Description</th>
+            <th>Price</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var p in Model)
+        {
+            <tr>
+                <td>@p.Name</td>
+                <td>@p.Description</td>
+                <td>@p.Price.ToString("C")</td>
+                <td>
+                    <a asp-action="Edit" asp-route-id="@p.Id">Edit</a> |
+                    <form asp-action="Delete" asp-route-id="@p.Id" method="post" style="display:inline;">
+                        <button type="submit">Delete</button>
+                    </form>
+                    <form asp-controller="Cart" asp-action="AddToCart" method="post" style="display:inline;">
+                        <input type="hidden" name="productId" value="@p.Id" />
+                        <input type="hidden" name="quantity" value="1" />
+                        <button type="submit">Add to Cart</button>
+                    </form>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>

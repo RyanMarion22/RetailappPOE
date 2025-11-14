@@ -1,23 +1,25 @@
-﻿using Azure;
+﻿
+using Azure;
 using Azure.Data.Tables;
-using System;
+using System.ComponentModel.DataAnnotations;
 
-namespace RetailappPOEFunctions
+namespace RetailappPOE.Models
 {
     public class CustomerEntity : ITableEntity
     {
-        // Make CustomerId a string to match MVC GUIDs
-        public string CustomerId { get; set; } = string.Empty;
-        public string? Name { get; set; }
+        [Required] public string FirstName { get; set; } = "";
+        [Required] public string LastName { get; set; } = "";
+        [Required] [EmailAddress] public string Email { get; set; } = "";
         public string? Address { get; set; }
         public string? ContactNo { get; set; }
-        public string? Email { get; set; }
-        public string? Password { get; set; }
 
-        // ITableEntity implementation
-        public string? PartitionKey { get; set; }
-        public string? RowKey { get; set; }
-        public ETag ETag { get; set; }
+        // Computed for dropdown
+        public string Name => $"{FirstName} {LastName}".Trim();
+
+        // ITableEntity
+        public string PartitionKey { get; set; } = "Customers";
+        public string RowKey { get; set; } = Guid.NewGuid().ToString();
         public DateTimeOffset? Timestamp { get; set; }
+        public ETag ETag { get; set; }
     }
 }

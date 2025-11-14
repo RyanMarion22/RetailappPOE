@@ -10,7 +10,7 @@ namespace RetailappPOEFunctions
 {
     public class FileEntity
     {
-        public string? FileName { get; set; }
+        public string? Name { get; set; }
         public long Size { get; set; }
         public DateTimeOffset LastModified { get; set; }
         public string? DisplaySize { get; set; }

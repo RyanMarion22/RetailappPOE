@@ -1,0 +1,35 @@
+﻿@model IEnumerable<RetailappPOE.Models.OrderSQL>
+
+<h2>Manage Orders</h2>
+
+<table>
+    <thead>
+        <tr>
+            <th>Order ID</th>
+            <th>Customer</th>
+            <th>Status</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var order in Model)
+        {
+            <tr>
+                <td>@order.Id</td>
+                <td>@order.CustomerId</td>
+                <td>@order.Status</td>
+                <td>
+                    <form asp-action="UpdateStatus" method="post">
+                        <input type="hidden" name="orderId" value="@order.Id" />
+                        <select name="status">
+                            <option value="PENDING" selected="@((order.Status=="PENDING")?"selected":null)">PENDING</option>
+                            <option value="PLACED" selected="@((order.Status=="PLACED")?"selected":null)">PLACED</option>
+                            <option value="PROCESSED" selected="@((order.Status=="PROCESSED")?"selected":null)">PROCESSED</option>
+                        </select>
+                        <button type="submit">Update</button>
+                    </form>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>

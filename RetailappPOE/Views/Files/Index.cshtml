@@ -6,10 +6,13 @@
 
 <h2>Files</h2>
 
-@if (TempData["Message"] != null)
+<!-- SUCCESS -->
+@if (TempData["Success"] != null)
 {
-    <div class="alert alert-success">@TempData["Message"]</div>
+    <div class="alert alert-success">@TempData["Success"]</div>
 }
+
+<!-- ERROR -->
 @if (TempData["Error"] != null || ViewBag.Error != null)
 {
     <div class="alert alert-danger">@(TempData["Error"] ?? ViewBag.Error)</div>
@@ -29,17 +32,28 @@
         </tr>
     </thead>
     <tbody>
-        @foreach (var file in Model)
+        @if (Model != null && Model.Any())
+        {
+            @foreach (var file in Model)
+            {
+                <tr>
+                    <td>@file.Name</td>
+                    <td>@file.DisplaySize</td>
+                    <td>@file.LastModified?.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td>
+                        <a asp-action="Download" asp-route-fileName="@file.Name" class="btn btn-success btn-sm">Download</a>
+                        <form asp-action="Delete" asp-route-fileName="@file.Name" method="post" style="display:inline;"
+                              onsubmit="return confirm('Delete @file.Name?');">
+                            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+        }
+        else
         {
             <tr>
-                <td>@file.Name</td>
-                <td>@file.DisplaySize</td>
-                <td>@file.LastModified</td>
-                <td>
-                    <a asp-action="Download" asp-route-fileName="@file.Name" class="btn btn-success btn-sm">Download</a>
-                    <a asp-action="Delete" asp-route-fileName="@file.Name" class="btn btn-danger btn-sm"
-                       onclick="return confirm('Are you sure you want to delete this file?');">Delete</a>
-                </td>
+                <td colspan="4" class="text-center text-muted py-3">No files uploaded yet.</td>
             </tr>
         }
     </tbody>

@@ -1,88 +1,123 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using RetailappPOE.Data;
 using RetailappPOE.Models;
+using RetailappPOE.Models.SQLModels;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using System.Linq;
 
 namespace RetailappPOE.Controllers
 {
     public class ProductController : Controller
     {
         private readonly HttpClient _httpClient;
-        private readonly string _baseFunctionUrl = "https://ryanst10440289part2-a3avddhxerhyhke4.southafricanorth-01.azurewebsites.net/api/";
+        private readonly string _baseFunctionUrl;
+        private readonly IServiceScopeFactory _scopeFactory;
 
-        public ProductController(HttpClient httpClient)
+        public ProductController(HttpClient httpClient, IConfiguration config, IServiceScopeFactory scopeFactory)
         {
             _httpClient = httpClient;
+            _baseFunctionUrl = config["FunctionApi:BaseUrl"] ?? "http://localhost:7274/api/";
+            _scopeFactory = scopeFactory;
         }
 
-        // ==================== VIEW ALL PRODUCTS ====================
         public async Task<IActionResult> Index()
         {
-            var response = await _httpClient.GetAsync(_baseFunctionUrl + "products");
-
-            if (!response.IsSuccessStatusCode)
+            try
             {
-                ViewBag.Error = "Failed to load products from Azure Function.";
+                var response = await _httpClient.GetAsync(_baseFunctionUrl + "products");
+                if (!response.IsSuccessStatusCode)
+                {
+                    ViewBag.Error = "Failed to load products from Azure Function.";
+                    return View(new List<Product>());
+                }
+
+                var content = await response.Content.ReadAsStringAsync();
+                var apiProducts = JsonSerializer.Deserialize<List<Product>>(content, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+
+                // SYNC TO SQL
+                using var scope = _scopeFactory.CreateScope();
+                var ctx = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                foreach (var api in apiProducts)
+                {
+                    if (!int.TryParse(api.RowKey.Split('-').LastOrDefault(), out int sqlId)) continue;
+                    if (!ctx.Products.Any(p => p.Id == sqlId))
+                    {
+                        ctx.Products.Add(new ProductSQL
+                        {
+                            Id = sqlId,
+                            Name = api.Name ?? "Unknown",
+                            Description = api.Description,
+                            Price = (decimal)api.Price,
+                            ImageUrl = api.ImageUrl
+                        });
+                    }
+                }
+                await ctx.SaveChangesAsync();
+
+                return View(apiProducts);
+            }
+            catch (HttpRequestException ex)
+            {
+                ViewBag.Error = "Could not reach API: " + ex.Message;
                 return View(new List<Product>());
             }
-
-            var content = await response.Content.ReadAsStringAsync();
-            var products = JsonSerializer.Deserialize<List<Product>>(content, new JsonSerializerOptions
+            catch (Exception ex)
             {
-                PropertyNameCaseInsensitive = true
-            });
-
-            return View(products);
+                ViewBag.Error = "Error: " + ex.Message;
+                return View(new List<Product>());
+            }
         }
 
-        // ==================== CREATE PRODUCT (GET) ====================
         [HttpGet]
-        public IActionResult Create()
-        {
-            return View(new Product());
-        }
+        public IActionResult Create() => View(new Product());
 
-        // ==================== CREATE PRODUCT (POST) ====================
         [HttpPost]
         public async Task<IActionResult> Create(Product product)
         {
-            if (!ModelState.IsValid)
-                return View(product);
-
-            var json = JsonSerializer.Serialize(product);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            var response = await _httpClient.PostAsync(_baseFunctionUrl + "products", content);
-
-            if (response.IsSuccessStatusCode)
+            if (!ModelState.IsValid) return View(product);
+            try
             {
-                TempData["Success"] = "Product added successfully.";
-                return RedirectToAction("Index");
+                var json = JsonSerializer.Serialize(product);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                var response = await _httpClient.PostAsync(_baseFunctionUrl + "products", content);
+                if (response.IsSuccessStatusCode)
+                {
+                    TempData["Success"] = "Product added successfully.";
+                    return RedirectToAction("Index");
+                }
+                var body = await response.Content.ReadAsStringAsync();
+                ModelState.AddModelError("", $"API Error: {response.StatusCode}. {body}");
+                return View(product);
             }
-
-            ModelState.AddModelError("", "Failed to add product via Azure Function.");
-            return View(product);
+            catch (Exception ex)
+            {
+                ModelState.AddModelError("", "Error: " + ex.Message);
+                return View(product);
+            }
         }
 
-        // ==================== DELETE PRODUCT ====================
         [HttpPost]
-        public async Task<IActionResult> Delete(string partitionKey, string rowKey)
+        public async Task<IActionResult> Delete(string partitionKey, string rowKey, string imageUrl)
         {
-            var deleteUrl = $"{_baseFunctionUrl}DeleteProduct?partitionKey={partitionKey}&rowKey={rowKey}";
-            var response = await _httpClient.DeleteAsync(deleteUrl);
-
-            if (!response.IsSuccessStatusCode)
+            try
             {
-                TempData["Error"] = "Failed to delete product via Azure Function.";
+                var deleteUrl = $"{_baseFunctionUrl}products/{partitionKey}/{rowKey}";
+                var response = await _httpClient.DeleteAsync(deleteUrl);
+                if (response.IsSuccessStatusCode)
+                    TempData["Success"] = "Product deleted.";
+                else
+                    TempData["Error"] = $"Failed: {response.StatusCode}";
             }
-            else
+            catch (Exception ex)
             {
-                TempData["Success"] = "Product deleted successfully.";
+                TempData["Error"] = "Error: " + ex.Message;
             }
-
             return RedirectToAction("Index");
         }
     }

@@ -13,7 +13,7 @@ namespace RetailappPOE.Controllers
     public class CustomersController : Controller
     {
         private readonly HttpClient _httpClient;
-        private readonly string _baseFunctionUrl = "https://ryanst10440289part2-a3avddhxerhyhke4.southafricanorth-01.azurewebsites.net/api/";
+        private readonly string _baseFunctionUrl = "http://localhost:7274/api/";
 
 
         public CustomersController(HttpClient httpClient)
@@ -74,7 +74,8 @@ namespace RetailappPOE.Controllers
         [HttpPost]
         public async Task<IActionResult> Delete(string partitionKey, string rowKey)
         {
-            var deleteUrl = $"{_baseFunctionUrl}DeleteCustomer?partitionKey={partitionKey}&rowKey={rowKey}";
+            var deleteUrl = $"{_baseFunctionUrl}customers/{partitionKey}/{rowKey}";
+
             var response = await _httpClient.DeleteAsync(deleteUrl);
 
             if (!response.IsSuccessStatusCode)

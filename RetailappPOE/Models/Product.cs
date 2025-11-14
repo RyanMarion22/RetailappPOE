@@ -6,12 +6,10 @@ namespace RetailappPOE.Models
 {
     public class Product : ITableEntity
     {
-        public string PartitionKey { get; set; } = "PRODUCT";
+        public string PartitionKey { get; set; } = "Products";
         public string RowKey { get; set; } = Guid.NewGuid().ToString();
         public DateTimeOffset? Timestamp { get; set; }
         public ETag ETag { get; set; }
-
-        // Extra ID for linking with orders
         public string ProductId { get; set; } = Guid.NewGuid().ToString();
 
         [Required(ErrorMessage = "Product name is required.")]
@@ -23,6 +21,6 @@ namespace RetailappPOE.Models
         [Range(0.01, double.MaxValue, ErrorMessage = "Price must be greater than 0.")]
         public double Price { get; set; }
 
-        public string ImageUrl { get; set; } = ""; // Blob file URL
+        public string ImageUrl { get; set; } = "";
     }
 }
